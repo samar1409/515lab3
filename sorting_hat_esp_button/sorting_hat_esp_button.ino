@@ -1,183 +1,171 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include "sorting_hat_model.h"  // Include the trained Decision Tree model
+#include "sorting_hat_model.h"  
 
-// OLED screen configuration
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define OLED_RESET    -1
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+// Display settings
+#define OLED_W 128
+#define OLED_H 64
+#define OLED_RST -1
+Adafruit_SSD1306 screen(OLED_W, OLED_H, &Wire, OLED_RST);
 
-// Button pins for ESP32-WROOM
-#define BUTTON_A  32
-#define BUTTON_B  33
-#define BUTTON_C  25
-#define BUTTON_D  26
+// Button wiring (ESP32)
+#define KEY_1 32
+#define KEY_2 33
+#define KEY_3 25
+#define KEY_4 26
 
-// Quiz questions
-const char* questions[] = {
-    "1. What do you value?",
-    "2. Someone cheats?",
-    "3. Favorite subject?",
-    "4. Face challenges?",
-    "5. Friends say you're?",
-    "6. Mystery book?",
-    "7. Preferred pet?",
-    "8. Solve problems?",
-    "9. Friends you like?",
-    "10. Dream career?"
+//  quiz prompts
+const char* prompts[] = {
+    "1. What guides you most?",
+    "2. Rule broken — reaction?",
+    "3. Fav topic at school?",
+    "4. Approach a tough task?",
+    "5. People describe you as?",
+    "6. You find a strange book?",
+    "7. Ideal magical creature?",
+    "8. Strategy under pressure?",
+    "9. Which friends click best?",
+    "10. Life path you’d pick?"
 };
 
-// Answer options for each question
-const char* options[][4] = {
-    {"A) Bravery", "B) Loyalty", "C) Intelligence", "D) Ambition"},
-    {"A) Call out", "B) Let go", "C) Tell teacher", "D) Gain from it"},
-    {"A) Defense", "B) Herbology", "C) Charms", "D) Potions"},
-    {"A) Head-on", "B) Team up", "C) Plan first", "D) Outsmart"},
-    {"A) Bold", "B) Kind", "C) Smart", "D) Clever"},
-    {"A) Read now", "B) Check safe", "C) Study it", "D) Use it"},
-    {"A) Owl", "B) Toad", "C) Cat", "D) Phoenix"},
-    {"A) Act fast", "B) Compromise", "C) Analyze", "D) Outsmart"},
-    {"A) Adventurous", "B) Loyal", "C) Thoughtful", "D) Powerful"},
-    {"A) Auror", "B) Healer", "C) Scholar", "D) Minister"}
+//  answer phrasing
+const char* choices[][4] = {
+    {"A) Courage", "B) Dedication", "C) Wit", "D) Drive"},
+    {"A) Speak up", "B) Forgive", "C) Notify prof", "D) Twist advantage"},
+    {"A) DADA", "B) Magical plants", "C) Enchantments", "D) Alchemy"},
+    {"A) Jump in", "B) Seek help", "C) Prep wisely", "D) Outsmart"},
+    {"A) Fearless", "B) Loyal", "C) Bright", "D) Strategic"},
+    {"A) Dive in", "B) Safety first", "C) Analyze", "D) Try spell"},
+    {"A) Owl", "B) Frog", "C) Feline", "D) Flamebird"},
+    {"A) Fast reflex", "B) Negotiate", "C) Think deeply", "D) Outsmart"},
+    {"A) Wild spirits", "B) Devoted hearts", "C) Insightful minds", "D) Confident alphas"},
+    {"A) Dark wizard hunter", "B) Magical doctor", "C) Arcane scholar", "D) Magical leader"}
 };
 
-// Store user responses (1-4 per question)
-int responses[10] = {0};
-int questionIndex = 0;
+// Store answers as index (1–4)
+int selections[10] = {0};
+int currentPrompt = 0;
 
-// Load ML decision tree classifier
-Eloquent::ML::Port::DecisionTree clf;
+// ML classifier from model
+Eloquent::ML::Port::DecisionTree brain;
 
 void setup() {
     Serial.begin(115200);
 
-    // Initialize OLED display
-    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-        Serial.println("⚠️ OLED init failed. Check wiring.");
-        while (true);  // Halt if OLED init fails
+    // OLED setup
+    if (!screen.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+        Serial.println("⚠️ Display failed. Fix wiring.");
+        while (true);
     }
 
-    // Show startup message
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.setCursor(10, 10);
-    display.println("Sorting Hat Ready!");
-    display.display();
+    screen.clearDisplay();
+    screen.setTextSize(1);
+    screen.setTextColor(WHITE);
+    screen.setCursor(5, 10);
+    screen.println("🧠 Enchanted Hat Awake");
+    screen.display();
     delay(1500);
 
-    // Initialize buttons as input with internal pull-ups
-    pinMode(BUTTON_A, INPUT_PULLUP);
-    pinMode(BUTTON_B, INPUT_PULLUP);
-    pinMode(BUTTON_C, INPUT_PULLUP);
-    pinMode(BUTTON_D, INPUT_PULLUP);
+    // Button setup
+    pinMode(KEY_1, INPUT_PULLUP);
+    pinMode(KEY_2, INPUT_PULLUP);
+    pinMode(KEY_3, INPUT_PULLUP);
+    pinMode(KEY_4, INPUT_PULLUP);
 
-    // Display the first question
-    showQuestion();
+    presentPrompt();
 }
 
 void loop() {
-    // Continuously check for user input
-    checkButtons();
+    checkForInput();
 }
 
-// Display current question and options
-void showQuestion() {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setCursor(0, 0);
-    display.println(questions[questionIndex]);
+// Show question + options
+void presentPrompt() {
+    screen.clearDisplay();
+    screen.setTextSize(1);
+    screen.setCursor(0, 0);
+    screen.println(prompts[currentPrompt]);
 
-    // Print all 4 options
     for (int i = 0; i < 4; i++) {
-        display.setCursor(10, 20 + (i * 10));
-        display.println(options[questionIndex][i]);
+        screen.setCursor(10, 20 + (i * 10));
+        screen.println(choices[currentPrompt][i]);
     }
 
-    display.display();
+    screen.display();
 }
 
-// Check if a button was pressed and record response
-void checkButtons() {
-    bool pressed = false;
+// Check buttons and save answer
+void checkForInput() {
+    bool picked = false;
 
-    while (!pressed) {
-        if (digitalRead(BUTTON_A) == LOW) {
-            responses[questionIndex] = 1;
-            pressed = true;
-        } else if (digitalRead(BUTTON_B) == LOW) {
-            responses[questionIndex] = 2;
-            pressed = true;
-        } else if (digitalRead(BUTTON_C) == LOW) {
-            responses[questionIndex] = 3;
-            pressed = true;
-        } else if (digitalRead(BUTTON_D) == LOW) {
-            responses[questionIndex] = 4;
-            pressed = true;
+    while (!picked) {
+        if (digitalRead(KEY_1) == LOW) {
+            selections[currentPrompt] = 1;
+            picked = true;
+        } else if (digitalRead(KEY_2) == LOW) {
+            selections[currentPrompt] = 2;
+            picked = true;
+        } else if (digitalRead(KEY_3) == LOW) {
+            selections[currentPrompt] = 3;
+            picked = true;
+        } else if (digitalRead(KEY_4) == LOW) {
+            selections[currentPrompt] = 4;
+            picked = true;
         }
-        delay(20);  // Debounce delay
-    }
-
-    // Wait until button is released before proceeding
-    while (digitalRead(BUTTON_A) == LOW ||
-           digitalRead(BUTTON_B) == LOW ||
-           digitalRead(BUTTON_C) == LOW ||
-           digitalRead(BUTTON_D) == LOW) {
         delay(20);
     }
 
-    nextQuestion();
+    while (digitalRead(KEY_1) == LOW || digitalRead(KEY_2) == LOW ||
+           digitalRead(KEY_3) == LOW || digitalRead(KEY_4) == LOW) {
+        delay(20);
+    }
+
+    nextPrompt();
 }
 
-// Go to next question or trigger classification
-void nextQuestion() {
-    questionIndex++;
-    if (questionIndex < 10) {
-        showQuestion();  // Display next question
+// Go to next question or classify
+void nextPrompt() {
+    currentPrompt++;
+    if (currentPrompt < 10) {
+        presentPrompt();
     } else {
-        classifyHouse();  // All responses collected, predict house
+        determineAffinity();
     }
 }
 
-// Use the ML model to predict the Hogwarts house
-void classifyHouse() {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setCursor(10, 10);
-    display.println("Sorting...");
-    display.display();
+// Predict the House
+void determineAffinity() {
+    screen.clearDisplay();
+    screen.setTextSize(1);
+    screen.setCursor(15, 20);
+    screen.println("🔮 Calculating...");
+    screen.display();
     delay(1000);
 
-    // Convert responses to float array for model input
-    float features[10];
-    for (int i = 0; i < 10; i++) {
-        features[i] = (float)responses[i];
+    float input[10];
+    for (int i = 0; i < 10; i++) input[i] = (float)selections[i];
+
+    int outcome = brain.predict(input);
+
+    screen.clearDisplay();
+    screen.setTextSize(2);
+    screen.setCursor(0, 20);
+    screen.print("Result:\n");
+
+    switch (outcome) {
+        case 0: screen.println("Gryffindor"); break;
+        case 1: screen.println("Hufflepuff"); break;
+        case 2: screen.println("Ravenclaw"); break;
+        case 3: screen.println("Slytherin"); break;
+        default: screen.println("Unknown"); break;
     }
 
-    // Predict house (0–3)
-    int house = clf.predict(features);
+    screen.display();
 
-    // Display result on screen
-    display.clearDisplay();
-    display.setTextSize(2);
-    display.setCursor(0, 20);
-    display.print("House:\n");
-    switch (house) {
-        case 0: display.println("Gryffindor"); break;
-        case 1: display.println("Hufflepuff"); break;
-        case 2: display.println("Ravenclaw"); break;
-        case 3: display.println("Slytherin"); break;
-        default: display.println("Unknown"); break;
-    }
-
-    display.display();
-
-    // Log to Serial Monitor
-    Serial.println("Complete!");
-    Serial.print("Predicted House: ");
-    switch (house) {
+    Serial.println("✨ Sorting Done");
+    Serial.print("Assigned House: ");
+    switch (outcome) {
         case 0: Serial.println("Gryffindor"); break;
         case 1: Serial.println("Hufflepuff"); break;
         case 2: Serial.println("Ravenclaw"); break;
