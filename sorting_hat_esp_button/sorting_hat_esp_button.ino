@@ -175,7 +175,7 @@ void classifyHouse() {
     display.display();
 
     // Log to Serial Monitor
-    Serial.println("✅ Sorting complete!");
+    Serial.println("Complete!");
     Serial.print("Predicted House: ");
     switch (house) {
         case 0: Serial.println("Gryffindor"); break;
